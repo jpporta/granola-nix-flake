@@ -1,0 +1,11 @@
+.cache/
+build/
+dist/
+*.dmg
+*.dmg.*
+*.asar
+*.asar.unpacked/
+*.log
+*.part
+__pycache__/
+*.pyc

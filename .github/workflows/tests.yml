@@ -1,0 +1,20 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  patcher:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Syntax checks
+        run: |
+          bash -n build.sh desktop.sh
+          python3 -m py_compile scripts/*.py tests/*.py

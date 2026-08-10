@@ -1,0 +1,9 @@
+{
+  "better-sqlite3-multiple-ciphers": {
+    "12.9.0": "sha512-471izuwJKCgvCGJ0VP10Z0IN7NWFW+pk/A8KXItZXVJ0V2AEAB5HZfmc9U3VLMmJ46bRaPbdgaBbgWpBJ/biUg=="
+  },
+  "node-gyp": {
+    "version": "13.0.1",
+    "integrity": "sha512-piOr0S10qy5THB+q5BdqkoOx65XL/tjTMUAit3vciPNp+snTOBnGunWH1Rz7XZUxf2T9uFrfT/Ty4+aC3yPeyg=="
+  }
+}
