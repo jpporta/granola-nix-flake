@@ -208,15 +208,7 @@ class AsarArchive:
             temporary.unlink(missing_ok=True)
 
 
-def padded(value: bytes, original: bytes) -> bytes:
-    if len(value) > len(original):
-        raise PatchError("replacement does not fit in the original bundle slot")
-    return value.ljust(len(original), b" ")
-
-
-def patch_granola(
-    archive: AsarArchive, macos_version: str, display_audio_compat: bool
-) -> list[PatchResult]:
+def patch_granola(archive: AsarArchive, macos_version: str) -> list[PatchResult]:
     if not re.fullmatch(r"\d{1,2}(?:\.\d{1,2}){1,2}", macos_version):
         raise PatchError(f"invalid macOS version: {macos_version!r}")
 
@@ -244,6 +236,13 @@ def patch_granola(
             expected=1,
             label="backend platform normalization",
         ),
+        archive.patch_exact(
+            main,
+            b"async function u(e){e(await M.systemPreferences.askForMediaAccess(`microphone`))}",
+            b"async function u(e){e(!0)}",
+            expected=1,
+            label="Linux browser microphone permission bridge",
+        ),
     ]
 
     if b"process.platform===`linux`" not in archive.read_file(main):
@@ -251,45 +250,38 @@ def patch_granola(
             "Granola's Linux browser-audio branch is missing; refusing a macOS identity patch"
         )
 
-    if display_audio_compat:
-        capture_marker = (
-            b"navigator.mediaDevices.getDisplayMedia({audio:{sampleRate:e},video:!1})"
+    capture_marker = (
+        b"navigator.mediaDevices.getDisplayMedia({audio:{sampleRate:e},video:!1})"
+    )
+    permission_marker = (
+        b"navigator.mediaDevices.getDisplayMedia({audio:!0,video:!1})"
+    )
+    capture_files = archive.find_packed_files(capture_marker)
+    permission_files = archive.find_packed_files(permission_marker)
+    capture_count = (
+        archive.read_file(capture_files[0]).count(capture_marker)
+        if len(capture_files) == 1
+        else 0
+    )
+    permission_count = (
+        archive.read_file(permission_files[0]).count(permission_marker)
+        if len(permission_files) == 1
+        else 0
+    )
+    if (
+        len(capture_files) != 1
+        or len(permission_files) != 1
+        or capture_count != 1
+        or permission_count != 1
+    ):
+        raise PatchError(
+            "expected exactly one Granola audio-only Linux loopback implementation "
+            f"and permission site; found capture={capture_files} ({capture_count}), "
+            f"permission={permission_files} ({permission_count})"
         )
-        permission_marker = (
-            b"navigator.mediaDevices.getDisplayMedia({audio:!0,video:!1})"
-        )
-        capture_replacement = capture_marker.replace(b"video:!1", b"video:!0")
-        permission_replacement = permission_marker.replace(b"video:!1", b"video:!0")
-        capture_files = sorted(
-            set(archive.find_packed_files(capture_marker))
-            | set(archive.find_packed_files(capture_replacement))
-        )
-        permission_files = sorted(
-            set(archive.find_packed_files(permission_marker))
-            | set(archive.find_packed_files(permission_replacement))
-        )
-        if len(capture_files) != 1 or len(permission_files) != 1:
-            raise PatchError(
-                "expected exactly one browser display-audio implementation and permission "
-                f"site; found capture={capture_files}, permission={permission_files}"
-            )
-        results.extend(
-            [
-                archive.patch_exact(
-                    capture_files[0],
-                    capture_marker,
-                    capture_replacement,
-                    expected=1,
-                    label="Wayland display-audio capture picker",
-                ),
-                archive.patch_exact(
-                    permission_files[0],
-                    permission_marker,
-                    permission_replacement,
-                    expected=1,
-                    label="Wayland display-audio permission picker",
-                ),
-            ]
+    if b"id:`loopbackAllDevices`" not in archive.read_file(main):
+        raise PatchError(
+            "Granola's Linux all-output-devices loopback handler is missing"
         )
 
     archive.flush()
@@ -304,11 +296,6 @@ def parse_args() -> argparse.Namespace:
         default="15.5.0",
         help="macOS version exposed to Granola's renderer (default: 15.5.0)",
     )
-    parser.add_argument(
-        "--no-display-audio-compat",
-        action="store_true",
-        help="do not request a video/display track alongside system audio on Linux",
-    )
     return parser.parse_args()
 
 
@@ -316,11 +303,7 @@ def main() -> int:
     args = parse_args()
     try:
         archive = AsarArchive(args.asar)
-        results = patch_granola(
-            archive,
-            args.macos_version,
-            display_audio_compat=not args.no_display_audio_compat,
-        )
+        results = patch_granola(archive, args.macos_version)
     except (OSError, PatchError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

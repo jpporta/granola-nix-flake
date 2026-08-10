@@ -36,8 +36,8 @@ Tested on Pop!_OS 24.04 with COSMIC/Wayland using Granola 7.469.1 and Electron
 | App startup and login UI | Verified |
 | Encrypted local SQLite storage | Verified, including Granola's custom update hook |
 | Google login callback | Desktop protocol handler is installed by `desktop.sh`; test with your own account |
-| Microphone capture | Uses Granola's existing browser/MediaDevices Linux path; needs real-call testing |
-| System/meeting audio | Experimental on Wayland; depends on the desktop portal and PipeWire |
+| Microphone capture | Permission flow and PipeWire stream verified; transcription still needs real-call testing |
+| System/meeting audio | Onboarding fixed; uses Granola's built-in all-output-devices loopback path and still needs real-call testing |
 | Global shortcuts | Limited on Wayland; Granola's bundle does not ship the Linux X11 key server |
 | Google Meet consent helper | Unavailable; the official helper in the macOS installer is Mach-O-only |
 | Self-update | Unavailable; rebuild from a new official DMG instead |
@@ -94,16 +94,17 @@ the `granola://` callback used by browser-based authentication.
 Granola already contains a browser audio implementation for Linux. The patcher
 preserves that branch even while the renderer-facing identity says macOS.
 
-For Wayland, the compatibility patch requests a display/video track alongside
-display audio so Chromium can open the desktop portal picker. Select the relevant
-screen or window when prompted. Whether the portal supplies system audio depends
-on your compositor, PipeWire, and Electron; it is not guaranteed. Electron's
-official API documentation describes direct loopback capture as Windows-only.
-To retain Granola's original audio-only request, build with:
+The current Granola bundle contains a Linux-specific Electron handler named
+`loopbackAllDevices`. The patcher verifies and preserves its original audio-only
+permission and capture requests. It does not add a display/video track: doing so
+would conflict with Granola's audio-only handler and cause Chromium to reject the
+request.
 
-```bash
-./build.sh --no-display-audio-compat /path/to/Granola.dmg
-```
+The builder also replaces one macOS-only microphone permission probe in
+Granola's Linux browser-audio manager. Actual microphone access still goes
+through Chromium's `getUserMedia` and PipeWire; the patch only prevents the
+onboarding screen from treating Electron's unavailable Apple TCC API as a Linux
+denial.
 
 The project never adds `--no-sandbox` to the launcher.
 

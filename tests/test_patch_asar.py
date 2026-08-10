@@ -31,7 +31,9 @@ def integrity(content: bytes) -> dict[str, object]:
     }
 
 
-def make_archive(path: Path) -> dict[str, bytes]:
+def make_archive(
+    path: Path, *, primary_suffix: bytes = b"", include_loopback: bool = True
+) -> dict[str, bytes]:
     files = {
         "dist-electron/preload/preload.js": (
             b"bridge={platform:process.platform,"
@@ -39,11 +41,18 @@ def make_archive(path: Path) -> dict[str, bytes]:
         ),
         "dist-electron/main/index.js": (
             b"identity=x===`darwin`?`macOS`:x===`win32`?`Windows`:process.platform;"
-            b"audio=process.platform===`linux`?`browser`:`native`"
+            b"audio=process.platform===`linux`?`browser`:`native`;"
+            b"async function u(e){e(await M.systemPreferences.askForMediaAccess(`microphone`))};"
+            + (
+                b"handler={audio:{name:`All loopback devices`,id:`loopbackAllDevices`}}"
+                if include_loopback
+                else b""
+            )
         ),
         "dist-app/assets/primary-test.js": (
             b"capture=navigator.mediaDevices.getDisplayMedia({audio:{sampleRate:e},video:!1});"
             b"permission=navigator.mediaDevices.getDisplayMedia({audio:!0,video:!1})"
+            + primary_suffix
         ),
     }
     root: dict[str, object] = {"files": {}}
@@ -76,7 +85,7 @@ class PatchAsarTests(unittest.TestCase):
             make_archive(path)
 
             archive = PATCH_ASAR.AsarArchive(path)
-            results = PATCH_ASAR.patch_granola(archive, "15.5.0", True)
+            results = PATCH_ASAR.patch_granola(archive, "15.5.0")
             self.assertTrue(all(result.state == "patched" for result in results))
 
             reopened = PATCH_ASAR.AsarArchive(path)
@@ -87,7 +96,8 @@ class PatchAsarTests(unittest.TestCase):
             self.assertIn(b"osVersion:`15.5.0`", preload)
             self.assertIn(b"?`Windows`:`macOS`", main)
             self.assertIn(b"process.platform===`linux`", main)
-            self.assertEqual(primary.count(b"video:!0"), 2)
+            self.assertIn(b"async function u(e){e(!0)}", main)
+            self.assertEqual(primary.count(b"video:!1"), 2)
 
             for archive_path in reopened.iter_files():
                 entry = reopened._entry(archive_path)
@@ -96,7 +106,7 @@ class PatchAsarTests(unittest.TestCase):
                     entry["integrity"]["hash"], hashlib.sha256(content).hexdigest()
                 )
 
-            second_results = PATCH_ASAR.patch_granola(reopened, "15.5.0", True)
+            second_results = PATCH_ASAR.patch_granola(reopened, "15.5.0")
             self.assertTrue(
                 all(result.state == "already-patched" for result in second_results)
             )
@@ -107,7 +117,33 @@ class PatchAsarTests(unittest.TestCase):
             make_archive(path)
             archive = PATCH_ASAR.AsarArchive(path)
             with self.assertRaises(PATCH_ASAR.PatchError):
-                PATCH_ASAR.patch_granola(archive, "not-a-version", True)
+                PATCH_ASAR.patch_granola(archive, "not-a-version")
+
+    def test_rejects_duplicate_audio_marker_without_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "app.asar"
+            duplicate = (
+                b";again=navigator.mediaDevices.getDisplayMedia("
+                b"{audio:{sampleRate:e},video:!1})"
+            )
+            make_archive(path, primary_suffix=duplicate)
+            original = path.read_bytes()
+
+            with self.assertRaises(PATCH_ASAR.PatchError):
+                PATCH_ASAR.patch_granola(PATCH_ASAR.AsarArchive(path), "15.5.0")
+
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_rejects_missing_loopback_handler_without_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "app.asar"
+            make_archive(path, include_loopback=False)
+            original = path.read_bytes()
+
+            with self.assertRaises(PATCH_ASAR.PatchError):
+                PATCH_ASAR.patch_granola(PATCH_ASAR.AsarArchive(path), "15.5.0")
+
+            self.assertEqual(path.read_bytes(), original)
 
 
 if __name__ == "__main__":

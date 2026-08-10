@@ -8,7 +8,6 @@ CACHE_DIR="$PROJECT_DIR/.cache"
 MACOS_VERSION=""
 DMG_PATH=""
 DOWNLOAD_LATEST=0
-DISPLAY_AUDIO_COMPAT=1
 
 SEVENZIP_VERSION="2501"
 SEVENZIP_ARCHIVE="7z${SEVENZIP_VERSION}-linux-x64.tar.xz"
@@ -29,7 +28,6 @@ usage() {
     "  --output DIR                   Build destination (default: build/granola)" \
     "  --cache-dir DIR                Download cache (default: .cache)" \
     "  --macos-version VERSION        Identity version (default: installer SDK)" \
-    "  --no-display-audio-compat      Keep Granola's audio-only display request" \
     "  --download-latest              Fetch the current official Granola DMG" \
     "  -h, --help                     Show this help"
 }
@@ -45,7 +43,6 @@ usage() {
 #   --output DIR                   Build destination (default: build/granola)
 #   --cache-dir DIR                Download cache (default: .cache)
 #   --macos-version VERSION        Identity version (default: installer SDK)
-#   --no-display-audio-compat      Keep Granola's audio-only display request
 #   --download-latest              Fetch the current official Granola DMG
 #   -h, --help                     Show this help
 
@@ -94,10 +91,6 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 ]] || die "--macos-version requires a version"
       MACOS_VERSION="$2"
       shift 2
-      ;;
-    --no-display-audio-compat)
-      DISPLAY_AUDIO_COMPAT=0
-      shift
       ;;
     --download-latest)
       DOWNLOAD_LATEST=1
@@ -294,9 +287,6 @@ PATCH_ARGS=(
   "$APP_DIR/resources/app.asar"
   --macos-version "$MACOS_VERSION"
 )
-if [[ "$DISPLAY_AUDIO_COMPAT" -eq 0 ]]; then
-  PATCH_ARGS+=(--no-display-audio-compat)
-fi
 python3 "$PROJECT_DIR/scripts/patch_asar.py" "${PATCH_ARGS[@]}"
 
 step "Rebuilding Granola's encrypted SQLite module for Linux"
