@@ -131,7 +131,7 @@ if [[ "$DOWNLOAD_LATEST" -eq 0 && -z "$DMG_PATH" ]]; then
   die "supply the official Granola DMG or use --download-latest"
 fi
 
-for command_name in curl tar node npm python3 make sha256sum jq realpath file nproc; do
+for command_name in curl tar node npm python3 make sha256sum jq realpath file nproc install; do
   command -v "$command_name" >/dev/null || die "missing prerequisite: $command_name"
 done
 if ! node -e '
@@ -385,16 +385,7 @@ file "$SQLITE_MODULE/build/Release/better_sqlite3.node" | grep -q 'ELF 64-bit' \
   || die "rebuilt SQLite module is not a 64-bit Linux ELF library"
 note "Native SQLite module rebuilt with node-gyp $NODE_GYP_VERSION and $CXX_BIN"
 
-cat >"$APP_DIR/run-granola" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-APP_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-exec "\$APP_DIR/electron" \
-  --ozone-platform-hint=auto \
-  --enable-features=WebRTCPipeWireCapturer \
-  "\$@"
-EOF
-chmod 0755 "$APP_DIR/run-granola"
+install -m 0755 "$PROJECT_DIR/scripts/run-granola" "$APP_DIR/run-granola"
 
 cat >"$APP_DIR/.granola-linux-macos-build" <<EOF
 granola_version=$GRANOLA_VERSION

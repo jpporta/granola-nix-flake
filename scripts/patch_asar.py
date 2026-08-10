@@ -284,6 +284,51 @@ def patch_granola(archive: AsarArchive, macos_version: str) -> list[PatchResult]
             "Granola's Linux all-output-devices loopback handler is missing"
         )
 
+    # Acquire the microphone before the output monitor. The launcher has
+    # already selected HSP/HFP when the default input is a Bluetooth headset;
+    # this ordering also avoids racing PipeWire device discovery at startup.
+    capture_order_source = (
+        b",[p,m]=P(kn)?await Promise.all([f(`system`),f(`microphone`)])"
+        b":[await f(`system`),await f(`microphone`)];"
+    )
+    capture_order_mic_first = (
+        b",m=await f(`microphone`),p=(await new Promise(e=>setTimeout(e,1500)),"
+        b"await f(`system`));"
+    )
+    results.append(
+        archive.patch_exact(
+            capture_files[0],
+            capture_order_source,
+            capture_order_mic_first,
+            expected=1,
+            label="Linux Bluetooth microphone-first acquisition",
+        )
+    )
+
+    # Opening a Bluetooth microphone switches Linux headsets from A2DP to
+    # HSP/HFP. PipeWire recreates the input and output tracks during that
+    # transition, and Chromium can stop pulling an AudioWorklet that has no
+    # path to an audio destination after Granola reconnects the new tracks.
+    # The processor never writes to its output, so connecting it to the
+    # destination keeps the graph alive without playing the microphone back.
+    worklet_source = (
+        b"s.connect(l);let d=!1,f=!1,p=0,m,h=1e3,g=h,_=0,v,y,b=()=>{let e=P(he);"
+        b"return Number.isFinite(e)?Math.max(0,Math.trunc(e)):0},"
+    )
+    worklet_keepalive = (
+        b"s.connect(l).connect(t.destination);let d=!1,f=!1,p=0,m,h=1e3,g=h,_=0,"
+        b"v,y,b=()=>Math.max(0,Math.trunc(P(he)||0)),"
+    )
+    results.append(
+        archive.patch_exact(
+            capture_files[0],
+            worklet_source,
+            worklet_keepalive,
+            expected=1,
+            label="Linux Bluetooth AudioWorklet keepalive",
+        )
+    )
+
     archive.flush()
     return results
 

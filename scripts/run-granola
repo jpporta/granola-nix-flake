@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GRANOLA_BLUETOOTH_POLL_SECONDS="${GRANOLA_BLUETOOTH_POLL_SECONDS:-2}"
+declare -A GRANOLA_BT_ORIGINAL_PROFILES=()
+
+bluetooth_card_profile() {
+  local granola_bt_card="$1"
+  pactl --format=json list cards 2>/dev/null \
+    | jq -r --arg card "$granola_bt_card" \
+      '.[] | select(.name == $card) | .active_profile // empty' 2>/dev/null \
+    || true
+}
+
+prepare_bluetooth_microphone() {
+  command -v pactl >/dev/null 2>&1 || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+
+  local granola_default_source granola_bt_id granola_bt_card
+  local granola_bt_current granola_bt_target granola_bt_attempt
+  granola_default_source="$(pactl get-default-source 2>/dev/null || true)"
+  [[ "$granola_default_source" == bluez_input.* ]] || return 0
+
+  granola_bt_id="${granola_default_source#bluez_input.}"
+  granola_bt_id="${granola_bt_id%%.*}"
+  granola_bt_id="${granola_bt_id//:/_}"
+  granola_bt_card="bluez_card.$granola_bt_id"
+  granola_bt_current="$(bluetooth_card_profile "$granola_bt_card")"
+  [[ -n "$granola_bt_current" ]] || return 0
+
+  if [[ -z "${GRANOLA_BT_ORIGINAL_PROFILES[$granola_bt_card]+recorded}" ]]; then
+    GRANOLA_BT_ORIGINAL_PROFILES["$granola_bt_card"]="$granola_bt_current"
+  fi
+
+  case "$granola_bt_current" in
+    headset-head-unit*)
+      return 0
+      ;;
+  esac
+
+  if pactl set-card-profile "$granola_bt_card" headset-head-unit \
+    >/dev/null 2>&1; then
+    granola_bt_target="headset-head-unit"
+  elif pactl set-card-profile "$granola_bt_card" headset-head-unit-cvsd \
+    >/dev/null 2>&1; then
+    granola_bt_target="headset-head-unit-cvsd"
+  else
+    return 0
+  fi
+
+  printf 'Granola: enabled Bluetooth microphone profile %s.\n' \
+    "$granola_bt_target" >&2
+  for ((granola_bt_attempt = 0; granola_bt_attempt < 20; granola_bt_attempt++)); do
+    if pactl --format=json list sources 2>/dev/null \
+      | jq -e --arg source "$granola_default_source" \
+        '.[] | select(.name == $source) | .name' >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.1
+  done
+  pactl set-default-source "$granola_default_source" >/dev/null 2>&1 || true
+}
+
+restore_bluetooth_profiles() {
+  command -v pactl >/dev/null 2>&1 || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+
+  local granola_bt_card granola_bt_original granola_bt_current
+  for granola_bt_card in "${!GRANOLA_BT_ORIGINAL_PROFILES[@]}"; do
+    granola_bt_original="${GRANOLA_BT_ORIGINAL_PROFILES[$granola_bt_card]}"
+    granola_bt_current="$(bluetooth_card_profile "$granola_bt_card")"
+    case "$granola_bt_current" in
+      headset-head-unit*)
+        if [[ "$granola_bt_current" != "$granola_bt_original" ]]; then
+          pactl set-card-profile "$granola_bt_card" "$granola_bt_original" \
+            >/dev/null 2>&1 || true
+        fi
+        ;;
+    esac
+  done
+}
+
+trap restore_bluetooth_profiles EXIT
+prepare_bluetooth_microphone
+
+"$APP_DIR/electron" \
+  --ozone-platform-hint=auto \
+  --enable-features=WebRTCPipeWireCapturer \
+  "$@" &
+GRANOLA_ELECTRON_PID=$!
+
+while kill -0 "$GRANOLA_ELECTRON_PID" 2>/dev/null; do
+  sleep "$GRANOLA_BLUETOOTH_POLL_SECONDS"
+  prepare_bluetooth_microphone
+done
+
+set +e
+wait "$GRANOLA_ELECTRON_PID"
+GRANOLA_ELECTRON_STATUS=$?
+set -e
+exit "$GRANOLA_ELECTRON_STATUS"

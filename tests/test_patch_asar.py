@@ -17,6 +17,11 @@ PATCH_ASAR = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = PATCH_ASAR
 SPEC.loader.exec_module(PATCH_ASAR)
 
+CAPTURE_ORDER_SOURCE = (
+    b",[p,m]=P(kn)?await Promise.all([f(`system`),f(`microphone`)])"
+    b":[await f(`system`),await f(`microphone`)];"
+)
+
 
 def integrity(content: bytes) -> dict[str, object]:
     block_size = 16
@@ -32,7 +37,10 @@ def integrity(content: bytes) -> dict[str, object]:
 
 
 def make_archive(
-    path: Path, *, primary_suffix: bytes = b"", include_loopback: bool = True
+    path: Path,
+    *,
+    primary_suffix: bytes = b"",
+    include_loopback: bool = True,
 ) -> dict[str, bytes]:
     files = {
         "dist-electron/preload/preload.js": (
@@ -52,6 +60,9 @@ def make_archive(
         "dist-app/assets/primary-test.js": (
             b"capture=navigator.mediaDevices.getDisplayMedia({audio:{sampleRate:e},video:!1});"
             b"permission=navigator.mediaDevices.getDisplayMedia({audio:!0,video:!1})"
+            + CAPTURE_ORDER_SOURCE
+            + b"s.connect(l);let d=!1,f=!1,p=0,m,h=1e3,g=h,_=0,v,y,b=()=>{let e=P(he);"
+            b"return Number.isFinite(e)?Math.max(0,Math.trunc(e)):0},"
             + primary_suffix
         ),
     }
@@ -98,6 +109,16 @@ class PatchAsarTests(unittest.TestCase):
             self.assertIn(b"process.platform===`linux`", main)
             self.assertIn(b"async function u(e){e(!0)}", main)
             self.assertEqual(primary.count(b"video:!1"), 2)
+            self.assertIn(
+                b"m=await f(`microphone`),p=(await new Promise",
+                primary,
+            )
+            self.assertNotIn(b"m?.stop(),m=p", primary)
+            self.assertNotIn(b"[p,m]=P(kn)?await Promise.all", primary)
+            self.assertIn(b"s.connect(l).connect(t.destination)", primary)
+            self.assertNotIn(
+                b"s.connect(l);let d=!1,f=!1,p=0,m,h=1e3", primary
+            )
 
             for archive_path in reopened.iter_files():
                 entry = reopened._entry(archive_path)

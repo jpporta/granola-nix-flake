@@ -36,8 +36,8 @@ Tested on Pop!_OS 24.04 with COSMIC/Wayland using Granola 7.469.1 and Electron
 | App startup and login UI | Verified |
 | Encrypted local SQLite storage | Verified, including Granola's custom update hook |
 | Google login callback | Desktop protocol handler is installed by `desktop.sh`; test with your own account |
-| Microphone capture | Permission flow and PipeWire stream verified; transcription still needs real-call testing |
-| System/meeting audio | Onboarding fixed; uses Granola's built-in all-output-devices loopback path and still needs real-call testing |
+| Microphone capture | PipeWire capture and live transcription verified with built-in and Bluetooth HFP microphones |
+| System/meeting audio | Uses Granola's built-in all-output-devices loopback path; sustained capture verified, real meeting audio still needs testing |
 | Global shortcuts | Limited on Wayland; Granola's bundle does not ship the Linux X11 key server |
 | Google Meet consent helper | Unavailable; the official helper in the macOS installer is Mach-O-only |
 | Self-update | Unavailable; rebuild from a new official DMG instead |
@@ -52,13 +52,14 @@ Granola's web app can view and edit notes, but
 - Your own Granola account and permission to use the downloaded client.
 - Node.js `22.22.2+`, `24.15.0+`, or `26+`, plus npm.
 - Python 3, curl, jq, tar, xz, make, `file`, and GCC/G++ 11 or newer.
+- `pactl` for automatic Bluetooth headset microphone profile management.
 - Normal Electron runtime libraries for your distribution, including GTK, NSS,
   GBM, and ALSA.
 
 On Pop!_OS/Ubuntu, most build prerequisites can be installed with:
 
 ```bash
-sudo apt install build-essential curl file jq make npm python3 xz-utils
+sudo apt install build-essential curl file jq make npm pulseaudio-utils python3 xz-utils
 ```
 
 Check `node --version` separately: the distribution's default Node.js may be too
@@ -106,6 +107,18 @@ Granola's Linux browser-audio manager. Actual microphone access still goes
 through Chromium's `getUserMedia` and PipeWire; the patch only prevents the
 onboarding screen from treating Electron's unavailable Apple TCC API as a Linux
 denial.
+
+Classic Bluetooth exposes a microphone through HSP/HFP, not the A2DP stereo
+playback profile. Switching profiles after Chromium has begun capture can
+invalidate Granola's first audio tracks. When the selected default input is a
+Bluetooth headset, `run-granola` therefore selects the headset's HFP profile
+before Electron starts and keeps it selected while Granola is running. It does
+not fall back to the laptop microphone. On a normal exit, the launcher restores
+the headset's previous profile.
+
+HFP has lower playback quality than A2DP because Bluetooth must carry the mic
+and speaker in both directions. That tradeoff applies while Granola is open;
+closing Granola restores stereo playback.
 
 The project never adds `--no-sandbox` to the launcher.
 
