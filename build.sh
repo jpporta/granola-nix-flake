@@ -278,9 +278,9 @@ cp -a "$DMG_EXTRACT/$RESOURCE_PATH/app.asar" \
   "$DMG_EXTRACT/$RESOURCE_PATH/app.asar.unpacked" \
   "$DMG_EXTRACT/$RESOURCE_PATH/icons" \
   "$APP_DIR/resources/"
-[[ -f "$APP_DIR/resources/icons/icon.png" ]] \
-  || die "Granola icon was not found in the installer"
-cp "$APP_DIR/resources/icons/icon.png" "$APP_DIR/granola-icon.png"
+[[ -f "$APP_DIR/resources/icons/mac-icon.png" ]] \
+  || die "Granola app icon was not found in the installer"
+cp "$APP_DIR/resources/icons/mac-icon.png" "$APP_DIR/granola-app-icon.png"
 
 step "Applying the split macOS/Linux identity patch"
 PATCH_ARGS=(
