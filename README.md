@@ -69,14 +69,13 @@ old for the locked native-build toolchain.
 ```bash
 git clone https://github.com/bindusara-reddy/granola-linux-macos.git
 cd granola-linux-macos
-./build.sh --download-latest
-./desktop.sh install
+./build.sh --download-latest --install-desktop
 ```
 
 Or supply an official DMG you already downloaded:
 
 ```bash
-./build.sh /path/to/Granola.dmg
+./build.sh --install-desktop /path/to/Granola.dmg
 ```
 
 The runnable app is created at `build/granola`. Start it from your application
@@ -87,7 +86,9 @@ launcher or run:
 ```
 
 Installing the desktop entry before signing in is important because it registers
-the `granola://` callback used by browser-based authentication.
+the `granola://` callback used by browser-based authentication. The application
+launcher is displayed simply as **Granola**; the compatibility details remain in
+the entry's description and build metadata.
 
 ## Audio on Linux
 
@@ -112,9 +113,17 @@ The project never adds `--no-sandbox` to the launcher.
 
 ## Updating and uninstalling
 
-Run `./build.sh --download-latest` again to update. A recognized existing build
-is preserved next to the new one as `granola.previous-<timestamp>` so an upstream
-breakage does not destroy the last working copy.
+Update the builder and installed app with:
+
+```bash
+git pull --ff-only
+./build.sh --download-latest --install-desktop
+```
+
+A completed build is staged on the destination filesystem before it is activated.
+A recognized existing build is preserved next to the new one as
+`granola.previous-<timestamp>` so an upstream breakage does not destroy the last
+working copy.
 
 Remove only the desktop integration with:
 
@@ -131,6 +140,7 @@ can contain account and meeting metadata.
 The builder:
 
 - downloads Granola only from Granola's official HTTPS endpoint;
+- refuses redirects from HTTPS downloads to non-HTTPS protocols;
 - records the DMG SHA-256 in the local build metadata;
 - downloads the exact Electron version named by the installer and verifies it
   against Electron's official `SHASUMS256.txt`;
@@ -140,7 +150,8 @@ The builder:
   integrity hashes;
 - refuses to build if expected upstream code markers are missing or duplicated;
 - compiles the native database addon and tests encryption, reopen, read/write,
-  and the custom update hook before replacing a working build.
+  and the custom update hook before staging and replacing a working build;
+- validates a new desktop entry before replacing the installed launcher.
 
 The DMG itself is trusted through Granola's HTTPS download; this Linux workflow
 does not validate Apple's code-signing chain. See [SECURITY.md](SECURITY.md) for

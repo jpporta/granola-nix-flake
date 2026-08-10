@@ -13,34 +13,48 @@ die() {
   exit 1
 }
 
+usage() {
+  printf '%s\n' \
+    "Usage: $0 install [build-directory]" \
+    "       $0 uninstall"
+}
+
 case "$ACTION" in
   install)
+    [[ $# -le 2 ]] || die "install accepts at most one build directory"
     APP_DIR="$(realpath -m "$APP_DIR")"
     [[ -x "$APP_DIR/run-granola" ]] || die "build not found at $APP_DIR"
     [[ -f "$APP_DIR/.granola-linux-macos-build" ]] \
       || die "unrecognized build directory: $APP_DIR"
-    [[ "$APP_DIR" != *$'\n'* && "$APP_DIR" != *'"'* ]] \
+    [[ "$APP_DIR" != *$'\n'* \
+      && "$APP_DIR" != *$'\r'* \
+      && "$APP_DIR" != *'"'* \
+      && "$APP_DIR" != *'%'* \
+      && "$APP_DIR" != *'\\'* ]] \
       || die "application path contains unsupported desktop-entry characters"
     mkdir -p "$APPLICATIONS_DIR"
-    TEMP_FILE="$(mktemp "$APPLICATIONS_DIR/.granola-linux-macos.XXXXXX")"
+    TEMP_FILE="$(mktemp "$APPLICATIONS_DIR/.granola-linux-macos.XXXXXX.desktop")"
     trap 'rm -f -- "$TEMP_FILE"' EXIT
     cat >"$TEMP_FILE" <<EOF
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Granola (Linux, macOS identity)
+Name=Granola
 Comment=Unofficial Linux compatibility build for Granola
 Exec="$APP_DIR/run-granola" %U
 Icon=$APP_DIR/granola-app-icon.png
 Terminal=false
+Categories=Office;
+Keywords=meeting;notes;transcription;
+StartupNotify=true
 StartupWMClass=granola
 MimeType=x-scheme-handler/granola;
 X-Granola-Linux-MacOS-Identity=true
 EOF
     chmod 0644 "$TEMP_FILE"
-    mv "$TEMP_FILE" "$DESKTOP_FILE"
     command -v desktop-file-validate >/dev/null \
-      && desktop-file-validate "$DESKTOP_FILE"
+      && desktop-file-validate "$TEMP_FILE"
+    mv "$TEMP_FILE" "$DESKTOP_FILE"
     command -v update-desktop-database >/dev/null \
       && update-desktop-database "$APPLICATIONS_DIR" >/dev/null 2>&1 || true
     command -v xdg-mime >/dev/null \
@@ -49,6 +63,7 @@ EOF
     printf 'Installed desktop entry: %s\n' "$DESKTOP_FILE"
     ;;
   uninstall)
+    [[ $# -eq 1 ]] || die "uninstall does not accept additional arguments"
     if [[ -f "$DESKTOP_FILE" ]]; then
       rm -- "$DESKTOP_FILE"
       printf 'Removed desktop entry: %s\n' "$DESKTOP_FILE"
@@ -58,9 +73,12 @@ EOF
     command -v update-desktop-database >/dev/null \
       && update-desktop-database "$APPLICATIONS_DIR" >/dev/null 2>&1 || true
     ;;
+  -h|--help)
+    [[ $# -eq 1 ]] || die "help does not accept additional arguments"
+    usage
+    ;;
   *)
-    printf 'Usage: %s install [build-directory]\n' "$0" >&2
-    printf '       %s uninstall\n' "$0" >&2
+    usage >&2
     exit 2
     ;;
 esac

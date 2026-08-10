@@ -25,6 +25,9 @@ Electron releases are checked against Electron's official SHA-256 list. The
 checked by SHA-512 SRI. The Granola DMG hash is recorded for auditability, but
 there is no pinned expected DMG hash because Granola's latest-download endpoint
 changes over time. The builder does not validate Apple's code-signing chain.
+All builder-managed downloads and redirects are restricted to HTTPS. When the
+bundled 7-Zip fallback is needed, its executable is freshly extracted from the
+verified archive for each build rather than trusted from a previous cache.
 
 npm may resolve transitive dependencies of the locked `node-gyp` package on a
 first build. npm's registry integrity checks still apply, but those transitive
@@ -36,7 +39,9 @@ The ASAR patcher requires exact, unique source markers and same-size
 replacements. It updates the affected ASAR integrity fields and aborts if the
 archive layout, marker count, native Linux branch, or integrity format differs
 from what was reviewed. A failed build does not replace a recognized working
-output directory.
+output directory. A successful build is copied to a staging directory on the
+destination filesystem before the previous build is moved and the staged build
+is atomically activated.
 
 ## Sensitive local state
 

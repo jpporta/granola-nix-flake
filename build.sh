@@ -8,6 +8,7 @@ CACHE_DIR="$PROJECT_DIR/.cache"
 MACOS_VERSION=""
 DMG_PATH=""
 DOWNLOAD_LATEST=0
+INSTALL_DESKTOP=0
 
 SEVENZIP_VERSION="2501"
 SEVENZIP_ARCHIVE="7z${SEVENZIP_VERSION}-linux-x64.tar.xz"
@@ -29,6 +30,7 @@ usage() {
     "  --cache-dir DIR                Download cache (default: .cache)" \
     "  --macos-version VERSION        Identity version (default: installer SDK)" \
     "  --download-latest              Fetch the current official Granola DMG" \
+    "  --install-desktop              Install/update the desktop launcher after building" \
     "  -h, --help                     Show this help"
 }
 
@@ -44,6 +46,7 @@ usage() {
 #   --cache-dir DIR                Download cache (default: .cache)
 #   --macos-version VERSION        Identity version (default: installer SDK)
 #   --download-latest              Fetch the current official Granola DMG
+#   --install-desktop              Install/update the desktop launcher after building
 #   -h, --help                     Show this help
 
 die() {
@@ -64,7 +67,8 @@ download() {
   local destination="$2"
   local partial="${destination}.part"
   mkdir -p "$(dirname "$destination")"
-  curl --fail --location --retry 3 --retry-delay 1 \
+  curl --fail --location --proto '=https' --proto-redir '=https' \
+    --retry 3 --retry-delay 1 \
     --output "$partial" "$url"
   mv "$partial" "$destination"
 }
@@ -94,6 +98,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --download-latest)
       DOWNLOAD_LATEST=1
+      shift
+      ;;
+    --install-desktop)
+      INSTALL_DESKTOP=1
       shift
       ;;
     -h|--help)
@@ -178,6 +186,16 @@ fi
 DMG_PATH="$(realpath -m "$DMG_PATH")"
 [[ -f "$DMG_PATH" ]] || die "DMG not found: $DMG_PATH"
 
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/granola-linux-macos.XXXXXXXX")"
+ACTIVATION_DIR=""
+cleanup() {
+  rm -rf -- "$WORK_DIR"
+  if [[ -n "$ACTIVATION_DIR" ]]; then
+    rm -rf -- "$ACTIVATION_DIR"
+  fi
+}
+trap cleanup EXIT
+
 if [[ -n "${GRANOLA_7ZZ:-}" ]]; then
   SEVENZZ="$GRANOLA_7ZZ"
 elif command -v 7zz >/dev/null; then
@@ -192,18 +210,13 @@ else
   actual_7zip_hash="$(sha256sum "$SEVENZIP_TARBALL" | cut -d' ' -f1)"
   [[ "$actual_7zip_hash" == "$SEVENZIP_SHA256" ]] \
     || die "7-Zip checksum mismatch"
-  if [[ ! -x "$SEVENZZ" ]]; then
-    tar xf "$SEVENZIP_TARBALL" -C "$CACHE_DIR" 7zz
-    chmod 0755 "$SEVENZZ"
-  fi
+  SEVENZIP_EXTRACT_DIR="$WORK_DIR/7zip"
+  mkdir -p "$SEVENZIP_EXTRACT_DIR"
+  tar xf "$SEVENZIP_TARBALL" -C "$SEVENZIP_EXTRACT_DIR" 7zz
+  SEVENZZ="$SEVENZIP_EXTRACT_DIR/7zz"
+  chmod 0755 "$SEVENZZ"
 fi
 [[ -x "$SEVENZZ" ]] || die "7zz is not executable: $SEVENZZ"
-
-WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/granola-linux-macos.XXXXXXXX")"
-cleanup() {
-  rm -rf -- "$WORK_DIR"
-}
-trap cleanup EXIT
 
 step "Inspecting the official DMG"
 DMG_METADATA="$WORK_DIR/metadata"
@@ -418,16 +431,39 @@ reopened.close();
 "
 note "Encrypted SQLite and Granola's updateHook extension work"
 
-if [[ -e "$OUTPUT_DIR" ]]; then
+step "Activating the completed build"
+ACTIVATION_DIR="$(mktemp -d \
+  "$(dirname "$OUTPUT_DIR")/.granola-linux-macos.activate.XXXXXXXX")"
+STAGED_OUTPUT="$ACTIVATION_DIR/granola"
+mv "$APP_DIR" "$STAGED_OUTPUT"
+
+BACKUP_DIR=""
+if [[ -e "$OUTPUT_DIR" || -L "$OUTPUT_DIR" ]]; then
   [[ -f "$OUTPUT_DIR/.granola-linux-macos-build" ]] \
     || die "refusing to replace unrecognized output directory: $OUTPUT_DIR"
   BACKUP_DIR="${OUTPUT_DIR}.previous-$(date -u +%Y%m%dT%H%M%SZ)"
+  [[ ! -e "$BACKUP_DIR" && ! -L "$BACKUP_DIR" ]] \
+    || die "backup path already exists: $BACKUP_DIR"
   mv "$OUTPUT_DIR" "$BACKUP_DIR"
   note "Previous build preserved at $BACKUP_DIR"
 fi
-mv "$APP_DIR" "$OUTPUT_DIR"
+if ! mv "$STAGED_OUTPUT" "$OUTPUT_DIR"; then
+  if [[ -n "$BACKUP_DIR" && ! -e "$OUTPUT_DIR" && ! -L "$OUTPUT_DIR" ]]; then
+    mv "$BACKUP_DIR" "$OUTPUT_DIR" \
+      || die "activation failed and the previous build could not be restored"
+  fi
+  die "could not activate the completed build"
+fi
+rmdir "$ACTIVATION_DIR"
+ACTIVATION_DIR=""
 
 printf '\nBuilt Granola %s for Linux with macOS %s product identity.\n' \
   "$GRANOLA_VERSION" "$MACOS_VERSION"
 printf 'Run: %s/run-granola\n' "$OUTPUT_DIR"
-printf 'Desktop integration: %s/desktop.sh install %s\n' "$PROJECT_DIR" "$OUTPUT_DIR"
+if [[ "$INSTALL_DESKTOP" -eq 1 ]]; then
+  step "Installing desktop integration"
+  "$PROJECT_DIR/desktop.sh" install "$OUTPUT_DIR"
+else
+  printf 'Desktop integration: %s/desktop.sh install %s\n' \
+    "$PROJECT_DIR" "$OUTPUT_DIR"
+fi
