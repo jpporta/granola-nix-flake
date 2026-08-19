@@ -46,7 +46,9 @@ Do a disposable test meeting before relying on this for an important call.
 Granola's web app can view and edit notes, but
 [transcription is performed by the desktop client](https://docs.granola.ai/help-center/taking-notes/transcription).
 
-## Requirements
+## Manual Build
+
+### Requirements
 
 - x86-64 Linux. ARM64 is not supported by this release.
 - Your own Granola account and permission to use the downloaded client.
@@ -169,6 +171,37 @@ The builder:
 The DMG itself is trusted through Granola's HTTPS download; this Linux workflow
 does not validate Apple's code-signing chain. See [SECURITY.md](SECURITY.md) for
 the full trust model.
+
+## Alternative Installation with Nix Flakes
+
+If you don't have Nix installed, install it via the [Determinate Nix Installer](https://determinate.systems/nix-installer) or [nixos.org](https://nixos.org/download/).
+
+### Run directly
+```bash
+nix run github:jpporta/granola-nix-flake
+```
+*(Automatically downloads dependencies, builds Granola in `~/.local/share/granola-linux-macos`, installs the desktop entry with `granola://` protocol handler, and launches the app.)*
+
+### Clone and run locally
+```bash
+git clone https://github.com/jpporta/granola-nix-flake.git
+cd granola-nix-flake
+nix run .
+```
+
+### Additional Flake commands
+- **Build only**: `nix run .#build`
+- **Install desktop entry**: `nix run .#install-desktop`
+- **Development shell**: `nix develop`
+
+### NixOS / Home Manager
+Add the input to your `flake.nix`:
+
+<!--TODO: Update to root repo if merged-->
+```nix
+inputs.granola.url = "github:jpporta/granola-nix-flake";
+```
+Then add `inputs.granola.packages.${pkgs.system}.default` to `environment.systemPackages` or `home.packages`.
 
 ## Legal and project scope
 
