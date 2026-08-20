@@ -126,7 +126,7 @@ Type=Application
 Version=1.0
 Name=Granola
 Comment=Granola AI meeting notes and recorder
-Exec=$out/bin/granola %U
+Exec=$out/bin/granola --enable-features=WebRTCPipeWireCapturer %U
 Icon=$BUILD_DIR/granola-app-icon.png
 Terminal=false
 Categories=Office;
